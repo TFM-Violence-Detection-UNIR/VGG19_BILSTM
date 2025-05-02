@@ -18,7 +18,7 @@ Los datasets se pueden encontrar en esta [direccion](https://alumnosunir-my.shar
 
 1. **Clona este repositorio**:
     ```bash
-    git clone https://github.com/tu_usuario/VGG19_BILSTM.git
+    git clone https://github.com/TFM-Violence-Detection-UNIR/VGG19_BILSTM.git
     cd VGG19_BILSTM
     ```
 

@@ -13,7 +13,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.utils import shuffle
 from tensorflow.keras.applications.vgg19 import VGG19
 from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.keras.layers import GlobalAveragePooling2D, TimeDistributed, LSTM, Dense
+from tensorflow.keras.layers import GlobalAveragePooling2D, TimeDistributed, LSTM, Dense, Input
 from tensorflow.keras.models import Sequential
 
 def save_folder(route):
@@ -93,31 +93,32 @@ def preprocess_training_videos(fight_dir, non_fight_dir, sequence_length):
     X_train, y_train = shuffle(X_train, y_train_encoded, random_state=42)
     return X_train, y_train
 
-def create_compile_model(sequence_length, lstm_units=(64, 64), dense_units=(64, 64), frozen_layers=5, learning_rate=0.01):
-    # Importar VGG con los pesos de image_net sin incluir las capas finales de clasificacion
-    vgg19_extract_features = VGG19(weights=None, include_top=False, input_shape=(224, 224, 3))
-    # Congelar las primeras capas y descongelar las últimas
-    # for layer in vgg19_extract_features.layers[:frozen_layers]:  # Congelar todas excepto las últimas 5 capas
-    #     layer.trainable = False
+def create_compile_model(sequence_length, learning_rate=0.001):
+    input_layer = Input(shape=(sequence_length, 224, 224, 3)) #(40 frames por vídeo), cada uno de tamaño 224x224x3 (color)
+    # Rama A: CNN (VGG19)
+    vgg = VGG19(weights='imagenet', include_top=False, input_shape=(224, 224, 3)) #Se carga VGG19 preentrenado con ImageNet sin las capas de clasificación (include_top=False).
+    vgg.trainable = False #Se congela (trainable = False) para no reentrenar sus pesos, lo que ahorra tiempo y evita sobreajuste.
+    cnn_branch = TimeDistributed(vgg)(input_layer) #TimeDistributed aplica la CNN a cada frame individualmente.
+    cnn_branch = TimeDistributed(GlobalAveragePooling2D())(cnn_branch) #Luego se aplica GlobalAveragePooling2D por frame → convierte cada mapa de características en un vector.
 
-    # Crear un modelo secuencial (adición de capas consecutivas)
-    model = Sequential()
-    # La capa pasa al modelo videos individuales como paquetes, dando cada frame por separado
-    model.add(TimeDistributed(vgg19_extract_features, input_shape=(sequence_length, 224, 224, 3)))
-    # Redimensionar la salida de TimeDistributed antes de pasarla a LSTM
-    model.add(TimeDistributed(GlobalAveragePooling2D()))
-    model.add(LSTM(lstm_units[0], return_sequences=True))
-    model.add(LSTM(lstm_units[1]))
-    model.add(Dense(dense_units[0], activation='sigmoid'))
-    model.add(Dense(dense_units[1], activation='sigmoid'))
-    # Capa densa final con activación 'softmax' para un problema binario
-    model.add(Dense(2, activation='sigmoid'))  # Ajusta el número de unidades según tu caso binario
+    # Rama B: "bruto" hacia Bi-LSTM
+    # Primero reducimos el frame bruto sin CNN
+    pooled = TimeDistributed(AveragePooling2D(pool_size=(8, 8)))(input_layer) #Aplica AveragePooling2D(8x8) a cada frame → reduce 224×224 → 28×28 (más manejable).
+    flattened = TimeDistributed(Flatten())(pooled)  # (28,28,3) → vector. Convierte cada frame (28×28×3) en un vector plano: 2.352 valores por frame.
+    lstm_branch = Bidirectional(LSTM(128))(flattened) #La secuencia de vectores compactos se le pasa a la BiLSTM. La salida es un vector de tamaño 256 (128 en cada dirección).
 
-    # Compilar el modelo
-    optimizer = Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    # Concatenar ambas ramas
+    cnn_summary = GlobalAveragePooling1D()(cnn_branch)#Calcula el promedio temporal de todos los vectores de salida del CNN.
+    merged = Concatenate()([cnn_summary, lstm_branch])#Se fusionan las salidas de ambas ramas (512 + 256 → 768).
 
-    return model # Se desea devolver el modelo, no la compilacion
+    x = Dense(128, activation='relu')(merged) #Capa densa intermedia con 128 neuronas y activación ReLU.
+    output = Dense(2, activation='softmax')(x)
+
+    model = Model(inputs=input_layer, outputs=output)
+    model.compile(optimizer=Adam(learning_rate=learning_rate), loss='categorical_crossentropy', metrics=['accuracy'])
+
+    return model
+
 
 def save_tuner_data(tuner, folder):
     # Obtener todos los ensayos realizados por el tuner
@@ -159,8 +160,8 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
         learning_rate = hp.Choice('learning_rate', values=[0.01, 0.001, 0.0001])
 
         model = create_compile_model(sequence_length, 
-                                     lstm_units=(lstm_units_layer1, lstm_units_layer2), 
-                                     dense_units=(dense_units_layer1, dense_units_layer2),
+                                    #  lstm_units=(lstm_units_layer1, lstm_units_layer2), 
+                                    #  dense_units=(dense_units_layer1, dense_units_layer2),
                                      #frozen_layers=frozen_layers,
                                      learning_rate=learning_rate)
         return model
@@ -173,7 +174,7 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
             project_name=f'violence_detection'
         )
 
-    checkpoint_path = r"training_1\cp.ckpt"
+    checkpoint_path = r"training_1\cp.weights.h5"
     checkpoint_dir = os.path.dirname(checkpoint_path)
     # Create a callback that saves the model's weights
     cp_callback = ModelCheckpoint(filepath=checkpoint_path,
@@ -207,20 +208,20 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
 
 # PARAMETROS Y DIRECTORIOS
 # Definir directorios de entrenamiento
-train_fight_dir = r"C:\Users\ADMIN\Documents\xai_vd\Hockey fights\train_test\fight"
-train_non_fight_dir = r"C:\Users\ADMIN\Documents\xai_vd\Hockey fights\train_test\nonfight"
+train_fight_dir = r"C:\Users\samug\OneDrive\Escritorio\TFM MARIO Y YO\Hockey fights\train_test\fight"
+train_non_fight_dir = r"C:\Users\samug\OneDrive\Escritorio\TFM MARIO Y YO\Hockey fights\train_test\nonfight"
 sequence_length = 40  # Longitud de la secuencia temporal para la LSTM
-folder = save_folder(r"C:\Users\ADMIN\Documents\xai_vd\trained_models\join_vgg_lstm\\")
+folder = save_folder(r"C:\Users\samug\OneDrive\Escritorio\TFM MARIO Y YO\trained_models\join_vgg_lstm")
 
 # PREPROCESADO DEL INPUT DEL ALGORITMO. X_train:(4, 40, 224, 224, 3), y_train: (4,2)
 X_train, y_train = preprocess_training_videos(train_fight_dir, train_non_fight_dir, sequence_length)
 
 print(y_train)
-# # ENTRENAMIENTO DEL MODELO
-# # AJUSTE DE HIPERPARAMETROS, OTRAS OPCIONES DE PARAMETROS, OTRAS OPCIONES DE LSTM Y CAPAS DENSAS.
-# best_model = keras_tuner_train_model(X_train, y_train, folder, sequence_length)
+# ENTRENAMIENTO DEL MODELO
+# AJUSTE DE HIPERPARAMETROS, OTRAS OPCIONES DE PARAMETROS, OTRAS OPCIONES DE LSTM Y CAPAS DENSAS.
+best_model = keras_tuner_train_model(X_train, y_train, folder, sequence_length)
 
-# def save_model(folder, best_model):
-#     best_model.save(os.path.join(folder, "best_model.keras"))
+def save_model(folder, best_model):
+    best_model.save(os.path.join(folder, "best_model.keras"))
 
 

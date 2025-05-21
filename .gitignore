@@ -167,3 +167,5 @@ cython_debug/
 **/tempCodeRunnerFile.py
 
 datasets/
+
+training_1/

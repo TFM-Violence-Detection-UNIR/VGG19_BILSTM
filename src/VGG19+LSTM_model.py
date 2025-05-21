@@ -207,10 +207,10 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
 
 # PARAMETROS Y DIRECTORIOS
 # Definir directorios de entrenamiento
-train_fight_dir = r"C:\Users\ADMIN\Documents\xai_vd\Hockey fights\train_test\fight"
-train_non_fight_dir = r"C:\Users\ADMIN\Documents\xai_vd\Hockey fights\train_test\nonfight"
+train_fight_dir = r"C:\Users\USUARIO\Desktop\2 CUATRI\TFM\VGG19_BILSTM\src\datasets\action-movies\fights"
+train_non_fight_dir = r"C:\Users\USUARIO\Desktop\2 CUATRI\TFM\VGG19_BILSTM\src\datasets\action-movies\noFights"
 sequence_length = 40  # Longitud de la secuencia temporal para la LSTM
-folder = save_folder(r"C:\Users\ADMIN\Documents\xai_vd\trained_models\join_vgg_lstm\\")
+folder = save_folder(r"C:\Users\USUARIO\Desktop\2 CUATRI\TFM\VGG19_BILSTM\src\trained-models\action-movies\\")
 
 # PREPROCESADO DEL INPUT DEL ALGORITMO. X_train:(4, 40, 224, 224, 3), y_train: (4,2)
 X_train, y_train = preprocess_training_videos(train_fight_dir, train_non_fight_dir, sequence_length)

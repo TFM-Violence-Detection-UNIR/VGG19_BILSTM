@@ -249,10 +249,10 @@ def create_compile_model(sequence_length, lstm_units=(64, 64), dense_units=(64, 
         Sequential: Modelo compilado listo para entrenar.
     """
     input_layer = Input(shape=(sequence_length, 224, 224, 3)) #(40 frames por vídeo), cada uno de tamaño 224x224x3 (color)
-    # Rama A: CNN (VGG19)
-    vgg = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3)) #Se carga VGG19 preentrenado con ImageNet sin las capas de clasificación (include_top=False).
-    # vgg.trainable = False #Se congela (trainable = False) para no reentrenar sus pesos, lo que ahorra tiempo y evita sobreajuste.
-    cnn_branch = TimeDistributed(vgg)(input_layer) #TimeDistributed aplica la CNN a cada frame individualmente.
+    # Rama A: CNN (MobileNetV2) hacia Bi-LSTM
+    mobile = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3)) #Se carga MobileNet preentrenado con ImageNet sin las capas de clasificación (include_top=False).
+    # mobile.trainable = False #Se congela (trainable = False) para no reentrenar sus pesos, lo que ahorra tiempo y evita sobreajuste.
+    cnn_branch = TimeDistributed(mobile)(input_layer) #TimeDistributed aplica la CNN a cada frame individualmente.
     cnn_branch = TimeDistributed(GlobalAveragePooling2D())(cnn_branch) #Luego se aplica GlobalAveragePooling2D por frame → convierte cada mapa de características en un vector.
 
     # Rama B: "bruto" hacia Bi-LSTM

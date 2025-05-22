@@ -7,6 +7,8 @@ import pandas as pd
 import random
 import shutil
 
+import matplotlib.pyplot as plt
+
 from keras.callbacks import CSVLogger, EarlyStopping
 from keras.optimizers import Adam
 from keras.utils import to_categorical
@@ -267,7 +269,7 @@ def create_compile_model(sequence_length, lstm_units=(64, 64), dense_units=(64, 
     # Compilar el modelo
     optimizer = Adam(learning_rate=learning_rate)
     model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
-
+    model.summary()  # Imprimir resumen del modelo
     return model # Se desea devolver el modelo, no la compilacion
 
 def save_tuner_data(tuner, folder):
@@ -343,7 +345,8 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
             project_name=f'violence_detection'
         )
 
-    checkpoint_path = r"training_1\cp.weights.h5"
+    checkpoint_path = os.path.join(folder, "training_1", "cp.weights.h5")
+    #checkpoint_path = r"training_1\cp.weights.h5"
     checkpoint_dir = os.path.dirname(checkpoint_path)
     # Create a callback that saves the model's weights
     cp_callback = ModelCheckpoint(filepath=checkpoint_path,
@@ -351,7 +354,10 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
                                                  verbose=1)
 
     X_train_partial, X_val, y_train_partial, y_val = train_test_split(X_train, y_train, test_size=0.125, random_state=42)    
-    
+    print("Train samples:", len(X_train_partial))
+    print("Batch size:  ", sequence_length)
+    import math
+    print("=> steps/per epoch:", math.ceil(len(X_train_partial) / sequence_length))
     tuner.search(x=X_train_partial, 
                 y=y_train_partial,
                 epochs=2,
@@ -365,15 +371,106 @@ def keras_tuner_train_model(X_train, y_train, folder, sequence_length):
     best_model = tuner.get_best_models(num_models=1)[0]
     return best_model
 
+def train_best_model(X, y, folder, sequence_length):
+    # Parámetros óptimos (ejemplo: obtenidos del trial #1)
+    best_lstm_units = (256, 128)
+    best_dense_units = (512, 256)
+    best_learning_rate = 0.0001
+    frozen_layers = 5
+
+    # Crear modelo con hiperparámetros fijos
+    model = create_compile_model(
+        sequence_length=sequence_length,
+        lstm_units=best_lstm_units,
+        dense_units=best_dense_units,
+        frozen_layers=frozen_layers,
+        learning_rate=best_learning_rate
+    )
+    model.summary()
+
+    # Split train/validation
+    X_train, X_val, y_train, y_val = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    # Callbacks
+    os.makedirs(folder, exist_ok=True)
+    checkpoint_path = os.path.join(folder, "training_1", "cp.weights.h5")
+    cp_callback = ModelCheckpoint(
+        filepath=checkpoint_path,
+        save_weights_only=True,
+        verbose=1
+    )
+    log_path = os.path.join(folder, 'training_best.csv')
+    csv_logger = CSVLogger(log_path)
+
+    # Entrenamiento
+    history = model.fit(
+        x=X_train,
+        y=y_train,
+        epochs=5,                    # Ajusta el número de epochs
+        batch_size=sequence_length,  # Cada lote = 1 vídeo (5 frames)
+        validation_data=(X_val, y_val),
+        callbacks=[cp_callback, csv_logger]
+    )
+    return model, history
+
+
+def plot_history(history):
+    """ 
+        Dibuja las gráficas de la métrica de evaluación y la de la función de coste
+        a lo largo de las epochs. 
+        Matplotlib ajusta automáticamente el eje "y", por eso a veces el primer valor no coincide.
+    """
+
+    epochs = range(1, len(history.history['accuracy']) + 1)
+
+    # Valores finales
+    final_acc      = history.history['accuracy'][-1]
+    final_val_acc  = history.history['val_accuracy'][-1]
+    final_loss     = history.history['loss'][-1]
+    final_val_loss = history.history['val_loss'][-1]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+
+    # Accuracy
+    ax = axes[0]
+    ax.plot(epochs, history.history['accuracy'], marker='o', markersize=4, linestyle='-', label='train_acc')
+    ax.plot(epochs, history.history['val_accuracy'], marker='o', markersize=4, linestyle='-', label='val_acc')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Accuracy')
+    ax.set_title('Model Accuracy')
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.annotate(f"{final_acc:.3f}",     xy=(epochs[-1], final_acc),     xytext=(5, 5), textcoords="offset points")
+    ax.annotate(f"{final_val_acc:.3f}", xy=(epochs[-1], final_val_acc), xytext=(5, -10), textcoords="offset points")
+    
+    #Loss
+    ax = axes[1]
+    ax.plot(epochs, history.history['loss'], marker='o', markersize=4, linestyle='-', label='train_loss')
+    ax.plot(epochs, history.history['val_loss'], marker='o', markersize=4, linestyle='-', label='val_loss')
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Loss')
+    ax.set_title('Model Loss')
+    ax.legend()
+    ax.grid(True, linestyle='--', alpha=0.5)
+    ax.annotate(f"{final_loss:.3f}",     xy=(epochs[-1], final_loss),     xytext=(5, 5), textcoords="offset points")
+    ax.annotate(f"{final_val_loss:.3f}", xy=(epochs[-1], final_val_loss), xytext=(5, -10), textcoords="offset points")
+
+    plt.tight_layout()
+    plt.show()
+
+
 #split_data(HOCKEY_ROUTE, train_pct=0.75, seed=42)
 
 results_folder = save_folder(RESULTS_ROUTE)
-sequence_length = 7
+sequence_length = 5
 X_train, y_train = preprocess_training_videos(HOCKEY_TRAIN_FIGHT_ROUTE,
                                               HOCKEY_TRAIN_NOFIGHT_ROUTE, 
                                               sequence_length)
 # Entrenamiento del modelo
-best_model = keras_tuner_train_model(X_train, y_train, results_folder, sequence_length)
+# best_model = keras_tuner_train_model(X_train, y_train, results_folder, sequence_length)
+best_model, history = train_best_model(X_train, y_train, results_folder, sequence_length)
+plot_history(history)
 # Guardar el mejor modelo
 best_model.save(os.path.join(results_folder, "best_model.keras"))
 

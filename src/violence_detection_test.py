@@ -11,7 +11,6 @@ from sklearn.metrics import confusion_matrix, accuracy_score, precision_score,\
 from keras.utils import to_categorical
 from sklearn.utils import shuffle
 from tensorflow.keras.models import load_model
-from violence_detection import loop_each_video
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -19,6 +18,76 @@ load_dotenv()
 HOCKEY_TEST_FIGHT_ROUTE = os.getenv("HOCKEY_TEST_FIGHT_ROUTE")
 HOCKEY_TEST_NOFIGHT_ROUTE = os.getenv("HOCKEY_TEST_NOFIGHT_ROUTE")
 BEST_MODEL = os.getenv("BEST_MODEL")
+print(BEST_MODEL)
+
+
+def preprocess_frame(frame, target_size=(224, 224)):
+    """
+    Preprocesa un único fotograma para que tenga el tamaño y la forma adecuados
+    para la entrada de una red neuronal.
+
+    Args:
+        frame (np.ndarray): Fotograma original en formato BGR (altura, anchura, canales).
+        target_size (tuple[int, int], optional): Tamaño al que redimensionar
+            el fotograma (anchura, altura). Por defecto (224, 224).
+
+    Returns:
+        np.ndarray: Fotograma redimensionado a (1, target_height, target_width, 3), listo para batch.
+    """
+    # Redimensionar el fotograma al tamaño deseado
+    frame = cv2.resize(frame, target_size)
+    # Añadir la dimensión de batch
+    return np.expand_dims(frame, axis=0)
+
+def loop_each_video(video_folder, target_frames=30, frame_size=(224, 224)):
+    """
+    Recorre todos los vídeos .avi en una carpeta, extrae un número fijo de
+    fotogramas equidistantes de cada uno, y los preprocesa.
+
+    Args:
+        video_folder (str): Ruta a la carpeta que contiene los archivos .avi.
+        target_frames (int): Número de fotogramas a extraer y preprocesar por vídeo.
+        frame_size (tuple[int, int], optional): Tamaño al que redimensionar
+            cada fotograma (anchura, altura). Por defecto (224, 224).
+
+    Returns:
+        np.ndarray: Array de forma (num_vídeos, target_frames, frame_height, frame_width, 3)
+                    con todos los fotogramas preprocesados de cada vídeo.
+    """
+    all_preprocessed_videos = []
+    video_names = []
+    # Iterar sobre cada video de entrenamiento en la carpeta
+    for filename in os.listdir(video_folder):
+        video_names.append(filename)
+        if filename.endswith(".avi"):  # Asegúrate de que estás procesando archivos de video
+            video_path = os.path.join(video_folder, filename)
+            cap = cv2.VideoCapture(video_path)
+
+            # Calcular el número total de fotogramas en el video
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            # Truncar equidistantemente al número deseado de fotogramas
+            indices_truncados = np.linspace(0, total_frames-1, target_frames, dtype=int)
+
+            # Lista para almacenar las características de cada fotograma
+            preprocessed_video = []
+
+            # Iterar sobre cada fotograma
+            for i in indices_truncados:
+                cap.set(cv2.CAP_PROP_POS_FRAMES, i)  # Solo seleccionara los frames seleccionados equidistantes
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                preprocessed_frame = preprocess_frame(frame, target_size=frame_size)
+                preprocessed_video.append(preprocessed_frame)
+
+            preprocessed_video = np.array(preprocessed_video)
+            all_preprocessed_videos.append(np.squeeze(preprocessed_video))
+            # Liberar el objeto de captura
+            cap.release()
+
+    all_preprocessed_videos = np.array(all_preprocessed_videos)
+    return all_preprocessed_videos, video_names
+
 
 def preprocess_testing_videos(fight_dir, non_fight_dir, sequence_length):
     # Preprocesar videos de violencia y no violencoa
@@ -38,7 +107,7 @@ def preprocess_testing_videos(fight_dir, non_fight_dir, sequence_length):
     all_video_names = fight_video_names + nonfight_video_names
     return X_test, y_test, all_video_names
 
-def evaluate_model(model, X_test, y_test, all_video_names, folder, elapsed_time):
+def evaluate_model(model, X_test, y_test, all_video_names, folder, elapsed_time=1.0):
     # Hacer predicciones en los datos de prueba
     predictions = model.predict(X_test)
     predicted_classes = np.argmax(predictions, axis=1)
@@ -106,21 +175,21 @@ def evaluate_model(model, X_test, y_test, all_video_names, folder, elapsed_time)
     return results_df
 
 
-sequence_length = 7
+sequence_length = 5
 X_test, y_test, all_video_names = preprocess_testing_videos(HOCKEY_TEST_FIGHT_ROUTE, HOCKEY_TEST_NOFIGHT_ROUTE, sequence_length)
 
 
 loaded_model = load_model(os.path.join(BEST_MODEL, "best_model.keras"))
 
 # HACER PREDICCIONES CON EL MODELO
-start_time = time.time()
-predictions = loaded_model.predict(X_test)
-predicted_classes = np.argmax(predictions, axis=1)
-end_time = time.time()
+# start_time = time.time()
+# predictions = loaded_model.predict(X_test)
+# predicted_classes = np.argmax(predictions, axis=1)
+# end_time = time.time()
 
 # EVALUAR EL MODELO
 #FALTA ESTADÍSTICA SOBRE TIEMPO DE EJECUCIÓN DE LOS VIDEOS -> APORTAR ESTADIST INDICA LA RAPIDEZ DEL MODELO
-evaluation_results = evaluate_model(loaded_model, X_test, y_test, all_video_names, BEST_MODEL, round(end_time - start_time, 2))
+evaluation_results = evaluate_model(loaded_model, X_test, y_test, all_video_names, BEST_MODEL)
 
 print("Resultados de la evaluación:")
 print(evaluation_results)

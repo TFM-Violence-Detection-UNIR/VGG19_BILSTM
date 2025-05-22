@@ -2,11 +2,15 @@ import streamlit as st
 import tempfile
 import cv2
 import numpy as np
+import os
 from tensorflow.keras.models import load_model
 
+from dotenv import load_dotenv
+load_dotenv()
+BEST_MODEL = os.getenv("BEST_MODEL")
 # 1. Carga del modelo
 @st.cache_resource
-def load_violence_model(path=r"C:\Users\USUARIO\Desktop\2 CUATRI\TFM\VGG19_BILSTM\src\trained-models\mobilenet-hockey\22may1806\best_model.keras"):
+def load_violence_model(path=BEST_MODEL):
     return load_model(path)
 
 model = load_violence_model()

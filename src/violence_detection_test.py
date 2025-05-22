@@ -17,8 +17,8 @@ load_dotenv()
 
 HOCKEY_TEST_FIGHT_ROUTE = os.getenv("HOCKEY_TEST_FIGHT_ROUTE")
 HOCKEY_TEST_NOFIGHT_ROUTE = os.getenv("HOCKEY_TEST_NOFIGHT_ROUTE")
-BEST_MODEL = os.getenv("BEST_MODEL")
-print(BEST_MODEL)
+BEST_MODEL_ROUTE = os.getenv("BEST_MODEL_ROUTE")
+print(BEST_MODEL_ROUTE)
 
 
 def preprocess_frame(frame, target_size=(224, 224)):
@@ -179,7 +179,7 @@ sequence_length = 5
 X_test, y_test, all_video_names = preprocess_testing_videos(HOCKEY_TEST_FIGHT_ROUTE, HOCKEY_TEST_NOFIGHT_ROUTE, sequence_length)
 
 
-loaded_model = load_model(os.path.join(BEST_MODEL, "best_model.keras"))
+loaded_model = load_model(os.path.join(BEST_MODEL_ROUTE, "best_model.keras"))
 
 # HACER PREDICCIONES CON EL MODELO
 # start_time = time.time()
@@ -189,7 +189,7 @@ loaded_model = load_model(os.path.join(BEST_MODEL, "best_model.keras"))
 
 # EVALUAR EL MODELO
 #FALTA ESTADÍSTICA SOBRE TIEMPO DE EJECUCIÓN DE LOS VIDEOS -> APORTAR ESTADIST INDICA LA RAPIDEZ DEL MODELO
-evaluation_results = evaluate_model(loaded_model, X_test, y_test, all_video_names, BEST_MODEL)
+evaluation_results = evaluate_model(loaded_model, X_test, y_test, all_video_names, BEST_MODEL_ROUTE)
 
 print("Resultados de la evaluación:")
 print(evaluation_results)

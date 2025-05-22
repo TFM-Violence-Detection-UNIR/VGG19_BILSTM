@@ -19,8 +19,8 @@ from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.layers import GlobalAveragePooling2D, TimeDistributed, LSTM, Dense, Dropout
 from tensorflow.keras.models import Sequential
-
-
+from tensorflow.keras.layers import Input, Flatten, Concatenate, Bidirectional, AveragePooling2D, GlobalAveragePooling1D
+from tensorflow.keras.models import Model
 # Variables de entorno
 from dotenv import load_dotenv
 load_dotenv()
@@ -248,27 +248,28 @@ def create_compile_model(sequence_length, lstm_units=(64, 64), dense_units=(64, 
     Returns:
         Sequential: Modelo compilado listo para entrenar.
     """
-    base_model  = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-    # Congelar las primeras capas y descongelar las últimas
-    # for layer in base_model .layers[:frozen_layers]:  # Congelar todas excepto las últimas 5 capas
-    #     layer.trainable = False
+    input_layer = Input(shape=(sequence_length, 224, 224, 3)) #(40 frames por vídeo), cada uno de tamaño 224x224x3 (color)
+    # Rama A: CNN (VGG19)
+    vgg = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3)) #Se carga VGG19 preentrenado con ImageNet sin las capas de clasificación (include_top=False).
+    # vgg.trainable = False #Se congela (trainable = False) para no reentrenar sus pesos, lo que ahorra tiempo y evita sobreajuste.
+    cnn_branch = TimeDistributed(vgg)(input_layer) #TimeDistributed aplica la CNN a cada frame individualmente.
+    cnn_branch = TimeDistributed(GlobalAveragePooling2D())(cnn_branch) #Luego se aplica GlobalAveragePooling2D por frame → convierte cada mapa de características en un vector.
 
-    # Crear un modelo secuencial (adición de capas consecutivas)
-    model = Sequential()
-    # La capa pasa al modelo videos individuales como paquetes, dando cada frame por separado
-    model.add(TimeDistributed(base_model, input_shape=(sequence_length, 224, 224, 3)))
-    # Redimensionar la salida de TimeDistributed antes de pasarla a LSTM
-    model.add(TimeDistributed(GlobalAveragePooling2D()))
-    model.add(LSTM(lstm_units[0], return_sequences=True))
-    model.add(LSTM(lstm_units[1]))
-    model.add(Dense(dense_units[0], activation='sigmoid'))
-    model.add(Dense(dense_units[1], activation='sigmoid'))
-    # Capa densa final con activación 'softmax' para un problema binario
-    model.add(Dense(2, activation='sigmoid'))  # Ajusta el número de unidades según tu caso binario
+    # Rama B: "bruto" hacia Bi-LSTM
+    # Primero reducimos el frame bruto sin CNN
+    pooled = TimeDistributed(AveragePooling2D(pool_size=(8, 8)))(input_layer) #Aplica AveragePooling2D(8x8) a cada frame → reduce 224×224 → 28×28 (más manejable).
+    flattened = TimeDistributed(Flatten())(pooled)  # (28,28,3) → vector. Convierte cada frame (28×28×3) en un vector plano: 2.352 valores por frame.
+    lstm_branch = Bidirectional(LSTM(128))(flattened) #La secuencia de vectores compactos se le pasa a la BiLSTM. La salida es un vector de tamaño 256 (128 en cada dirección).
 
-    # Compilar el modelo
-    optimizer = Adam(learning_rate=learning_rate)
-    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics=['accuracy'])
+    # Concatenar ambas ramas
+    cnn_summary = GlobalAveragePooling1D()(cnn_branch)#Calcula el promedio temporal de todos los vectores de salida del CNN.
+    merged = Concatenate()([cnn_summary, lstm_branch])#Se fusionan las salidas de ambas ramas (512 + 256 → 768).
+
+    x = Dense(128, activation='relu')(merged) #Capa densa intermedia con 128 neuronas y activación ReLU.
+    output = Dense(2, activation='softmax')(x)
+
+    model = Model(inputs=input_layer, outputs=output)
+    model.compile(optimizer=Adam(learning_rate=learning_rate), loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()  # Imprimir resumen del modelo
     return model # Se desea devolver el modelo, no la compilacion
 
@@ -473,5 +474,3 @@ best_model, history = train_best_model(X_train, y_train, results_folder, sequenc
 plot_history(history)
 # Guardar el mejor modelo
 best_model.save(os.path.join(results_folder, "best_model.keras"))
-
-

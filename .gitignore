@@ -168,4 +168,4 @@ cython_debug/
 
 datasets/
 
-training_1/
+trained-models/

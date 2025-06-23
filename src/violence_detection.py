@@ -418,10 +418,18 @@ def train_best_model(X, y, folder, sequence_length):
 
 
 def plot_history(history):
-    """ 
-        Dibuja las gráficas de la métrica de evaluación y la de la función de coste
-        a lo largo de las epochs. 
-        Matplotlib ajusta automáticamente el eje "y", por eso a veces el primer valor no coincide.
+    """
+        Esta función dibuja las gráficas de la precisión (accuracy) y la pérdida (loss) del modelo a lo largo de las épocas de entrenamiento.
+        Se generan dos subgráficos: uno para visualizar la evolución de la precisión (tanto en entrenamiento como en validación) y otro para la evolución de la pérdida.
+        Cada gráfico incluye anotaciones en el último punto de la curva para mostrar el valor final obtenido.
+    Args:
+        history (History): Objeto que contiene el historial del entrenamiento del modelo, el cual debe incluir las claves:
+                           - 'accuracy': Precisión del entrenamiento por época.
+                           - 'val_accuracy': Precisión de la validación por época.
+                           - 'loss': Pérdida del entrenamiento por época.
+                           - 'val_loss': Pérdida de la validación por época.
+    Notas:
+        - Se utiliza la función plt.tight_layout() para ajustar automáticamente la distribución de los subgráficos.
     """
 
     epochs = range(1, len(history.history['accuracy']) + 1)
